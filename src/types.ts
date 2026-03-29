@@ -149,6 +149,5 @@ export type SensitivityLevel = 'low' | 'medium' | 'high';
 export interface TrackingState {
   readonly currentMonitorId: number | null;
   readonly lastSwitchAt: number;
-  readonly frameCount: number;
   readonly isPaused: boolean;
 }

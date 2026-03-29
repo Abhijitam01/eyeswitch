@@ -12,7 +12,7 @@ describe('DEFAULT_CONFIG', () => {
     expect(DEFAULT_CONFIG.smoothingFactor).toBe(0.3);
     expect(DEFAULT_CONFIG.switchCooldownMs).toBe(500);
     expect(DEFAULT_CONFIG.hysteresisFactor).toBe(0.25);
-    expect(DEFAULT_CONFIG.minFaceConfidence).toBe(0.7);
+    expect(DEFAULT_CONFIG.minFaceConfidence).toBe(0.4);
     expect(DEFAULT_CONFIG.cameraIndex).toBe(0);
     expect(DEFAULT_CONFIG.targetFps).toBe(30);
     expect(DEFAULT_CONFIG.verticalSwitching).toBe(false);

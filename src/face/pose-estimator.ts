@@ -1,6 +1,7 @@
 import type { FaceLandmarks, HeadPose, SmoothedPose, Point3D } from '../types.js';
 import {
   NOSE_TIP_INDEX,
+  CHIN_INDEX,
   LEFT_EYE_INDICES,
   RIGHT_EYE_INDICES,
   POSE_SCALING_FACTOR,
@@ -14,11 +15,11 @@ import {
  * Computes head yaw and pitch from MediaPipe 468-point face landmarks.
  *
  * Algorithm:
- *  1. Locate nose tip, left eye centre, right eye centre.
- *  2. Normalise all coordinates by interpupillary distance (IPD) for
- *     scale invariance (robust to distance from camera).
- *  3. Estimate yaw from horizontal nose offset relative to eye midpoint.
- *  4. Estimate pitch from vertical nose offset relative to eye midpoint.
+ *  1. Locate nose tip, chin, and jaw-outline reference points (234/454).
+ *  2. Normalise by face width (jaw-to-jaw) for scale invariance.
+ *  3. Estimate yaw from horizontal nose offset relative to jaw midpoint.
+ *  4. Estimate pitch from vertical nose offset relative to nose–chin midpoint.
+ *     Using jaw outline + chin avoids interference from glasses frames.
  *
  * Also maintains an EMA (exponential moving average) for smoothing.
  */
@@ -85,15 +86,19 @@ export class PoseEstimator {
 
   private computePitch(keypoints: ReadonlyArray<Point3D>): number {
     const noseTip = keypoints[NOSE_TIP_INDEX];
-    const leftEye = averagePoints(keypoints, LEFT_EYE_INDICES);
-    const rightEye = averagePoints(keypoints, RIGHT_EYE_INDICES);
+    const chin = keypoints[CHIN_INDEX];
+    const leftRef = averagePoints(keypoints, LEFT_EYE_INDICES);
+    const rightRef = averagePoints(keypoints, RIGHT_EYE_INDICES);
 
-    const ipd = euclidean2D(leftEye, rightEye);
-    if (ipd < 1e-6) return 0;
+    // Use face width (jaw outline to jaw outline) as normalisation factor
+    const faceWidth = euclidean2D(leftRef, rightRef);
+    if (faceWidth < 1e-6) return 0;
 
-    const eyeMidY = (leftEye.y + rightEye.y) / 2;
-    // Invert Y: canvas Y grows downward, but pitch-up should be positive
-    const offsetY = (eyeMidY - noseTip.y) / ipd;
+    // Vertical axis: midpoint between chin and nose tip is the face centre.
+    // Offset nose tip above chin midpoint → positive pitch (looking up).
+    // Canvas Y grows downward, so chin.y > noseTip.y when looking straight.
+    const faceMidY = (noseTip.y + chin.y) / 2;
+    const offsetY = (faceMidY - noseTip.y) / faceWidth;
 
     return radToDeg(Math.atan(offsetY * POSE_SCALING_FACTOR));
   }

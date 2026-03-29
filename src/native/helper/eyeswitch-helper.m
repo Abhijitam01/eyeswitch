@@ -33,12 +33,7 @@
 // ---------------------------------------------------------------------------
 
 static NSString *displayName(CGDirectDisplayID displayID) {
-    // Try CoreGraphics display description first
-    NSDictionary *info = (__bridge_transfer NSDictionary *)
-        CGDisplayCopyDisplayMode(displayID) ? nil : nil;
-    (void)info;
-
-    // Fall back to screen name from NSScreen
+    // Use screen name from NSScreen
     for (NSScreen *screen in [NSScreen screens]) {
         NSDictionary *desc = [screen deviceDescription];
         NSNumber *screenID = desc[@"NSScreenNumber"];
@@ -216,15 +211,25 @@ int main(int argc, const char *argv[]) {
                 fprintf(stderr, "--focus requires a display ID argument\n");
                 return 1;
             }
-            uint32_t displayId = (uint32_t)strtoul(argv[2], NULL, 10);
-            focusDisplay(displayId);
+            char *endptr = NULL;
+            unsigned long parsed = strtoul(argv[2], &endptr, 10);
+            if (endptr == argv[2] || *endptr != '\0') {
+                fprintf(stderr, "--focus: invalid display ID '%s'\n", argv[2]);
+                return 1;
+            }
+            focusDisplay((uint32_t)parsed);
         } else if (strcmp(cmd, "--warp") == 0) {
             if (argc < 3) {
                 fprintf(stderr, "--warp requires a display ID argument\n");
                 return 1;
             }
-            uint32_t displayId = (uint32_t)strtoul(argv[2], NULL, 10);
-            warpDisplay(displayId);
+            char *endptr = NULL;
+            unsigned long parsed = strtoul(argv[2], &endptr, 10);
+            if (endptr == argv[2] || *endptr != '\0') {
+                fprintf(stderr, "--warp: invalid display ID '%s'\n", argv[2]);
+                return 1;
+            }
+            warpDisplay((uint32_t)parsed);
         } else if (strcmp(cmd, "--get-focused") == 0) {
             getFocused();
         } else if (strcmp(cmd, "--check-permissions") == 0) {

@@ -188,10 +188,22 @@ describe('CLI startup (e2e)', () => {
 
   it('calibration export exits non-zero when no calibration file exists', () => {
     if (!ready) return;
-    // Run with a calibration file path that does not exist
-    const { status } = runCli(['calibration', 'export'], 5000);
-    // Should exit 1 with "No calibration data found"
-    expect(status).toBe(1);
+    const tmpHome = fs.mkdtempSync('/tmp/eyeswitch-e2e-home-');
+    try {
+      const result = spawnSync(
+        process.execPath,
+        [DIST_INDEX, 'calibration', 'export'],
+        {
+          cwd: ROOT,
+          timeout: 5000,
+          encoding: 'utf8',
+          env: { ...process.env, HOME: tmpHome, NO_COLOR: '1', FORCE_COLOR: '0' },
+        },
+      );
+      expect(result.status).toBe(1);
+    } finally {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    }
   });
 
   it('config set round-trip: set a key and get it back', () => {

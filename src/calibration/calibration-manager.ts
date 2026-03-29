@@ -90,7 +90,7 @@ export class CalibrationManager {
     });
 
     const result = aggregator.median();
-    if (result === null || aggregator.count < 5) return null;
+    if (result === null || aggregator.count < 2) return null;
 
     return Object.freeze({
       monitorId,

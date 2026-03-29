@@ -96,17 +96,15 @@ describe('radToDeg', () => {
 // ---------------------------------------------------------------------------
 
 describe('PoseEstimator', () => {
-  // For a face looking straight: nose tip is at the horizontal midpoint of the eyes.
-  // Eyes: left=(80,100), right=(120,100) → midX=100, IPD=40
-  // Nose tip at (100, 130) → offsetX=0, yaw=0
-  // offsetY=(100-130)/40 = -0.75
+  // Jaw outline: left=234=(80,100), right=454=(120,100) → midX=100, faceWidth=40
+  // Nose tip (1) at (100, 130) → offsetX=0, yaw=0
+  // Chin (152) at (100, 160) → faceMidY=(130+160)/2=145, offsetY=(145-130)/40=0.375
   it('estimates ~0° yaw for a frontal face', () => {
     const fl = makeFaceLandmarks({
-      33:  { x: 80,  y: 100, z: 0 },
-      133: { x: 80,  y: 100, z: 0 },
-      362: { x: 120, y: 100, z: 0 },
-      263: { x: 120, y: 100, z: 0 },
+      234: { x: 80,  y: 100, z: 0 }, // left jaw outline
+      454: { x: 120, y: 100, z: 0 }, // right jaw outline
       1:   { x: 100, y: 130, z: 0 }, // nose at midpoint
+      152: { x: 100, y: 160, z: 0 }, // chin
     });
     const estimator = new PoseEstimator(0);
     const pose = estimator.estimateRaw(fl);
@@ -116,11 +114,10 @@ describe('PoseEstimator', () => {
   it('estimates positive yaw when nose is offset right', () => {
     // Nose right of midpoint → head turned right
     const fl = makeFaceLandmarks({
-      33:  { x: 80,  y: 100, z: 0 },
-      133: { x: 80,  y: 100, z: 0 },
-      362: { x: 120, y: 100, z: 0 },
-      263: { x: 120, y: 100, z: 0 },
+      234: { x: 80,  y: 100, z: 0 },
+      454: { x: 120, y: 100, z: 0 },
       1:   { x: 115, y: 130, z: 0 }, // nose right of centre
+      152: { x: 100, y: 160, z: 0 },
     });
     const estimator = new PoseEstimator(0);
     const pose = estimator.estimateRaw(fl);
@@ -129,11 +126,10 @@ describe('PoseEstimator', () => {
 
   it('estimates negative yaw when nose is offset left', () => {
     const fl = makeFaceLandmarks({
-      33:  { x: 80,  y: 100, z: 0 },
-      133: { x: 80,  y: 100, z: 0 },
-      362: { x: 120, y: 100, z: 0 },
-      263: { x: 120, y: 100, z: 0 },
+      234: { x: 80,  y: 100, z: 0 },
+      454: { x: 120, y: 100, z: 0 },
       1:   { x: 85,  y: 130, z: 0 }, // nose left of centre
+      152: { x: 100, y: 160, z: 0 },
     });
     const estimator = new PoseEstimator(0);
     const pose = estimator.estimateRaw(fl);
@@ -153,17 +149,15 @@ describe('PoseEstimator', () => {
 
     // First call — raw pose (e.g. yaw ≈ 0)
     const fl1 = makeFaceLandmarks({
-      33:  { x: 80,  y: 100, z: 0 }, 133: { x: 80,  y: 100, z: 0 },
-      362: { x: 120, y: 100, z: 0 }, 263: { x: 120, y: 100, z: 0 },
-      1:   { x: 100, y: 130, z: 0 },
+      234: { x: 80,  y: 100, z: 0 }, 454: { x: 120, y: 100, z: 0 },
+      1:   { x: 100, y: 130, z: 0 }, 152: { x: 100, y: 160, z: 0 },
     });
     const p1 = estimator.estimate(fl1);
 
     // Second call — nose shifted right giving a positive yaw
     const fl2 = makeFaceLandmarks({
-      33:  { x: 80,  y: 100, z: 0 }, 133: { x: 80,  y: 100, z: 0 },
-      362: { x: 120, y: 100, z: 0 }, 263: { x: 120, y: 100, z: 0 },
-      1:   { x: 120, y: 130, z: 0 }, // max right
+      234: { x: 80,  y: 100, z: 0 }, 454: { x: 120, y: 100, z: 0 },
+      1:   { x: 120, y: 130, z: 0 }, 152: { x: 100, y: 160, z: 0 }, // max right
     });
     const p2 = estimator.estimate(fl2);
 
@@ -175,9 +169,8 @@ describe('PoseEstimator', () => {
   it('reset() clears EMA state', () => {
     const estimator = new PoseEstimator(0.1); // low alpha — very sticky
     const fl = makeFaceLandmarks({
-      33:  { x: 80,  y: 100, z: 0 }, 133: { x: 80,  y: 100, z: 0 },
-      362: { x: 120, y: 100, z: 0 }, 263: { x: 120, y: 100, z: 0 },
-      1:   { x: 120, y: 130, z: 0 },
+      234: { x: 80,  y: 100, z: 0 }, 454: { x: 120, y: 100, z: 0 },
+      1:   { x: 120, y: 130, z: 0 }, 152: { x: 100, y: 160, z: 0 },
     });
 
     estimator.estimate(fl); // set state
@@ -189,11 +182,10 @@ describe('PoseEstimator', () => {
     expect(afterReset).toBeCloseTo(raw, 1);
   });
 
-  it('handles degenerate case where IPD is 0 (returns 0 angles)', () => {
+  it('handles degenerate case where jaw width is 0 (returns 0 angles)', () => {
     const fl = makeFaceLandmarks({
-      33: { x: 100, y: 100, z: 0 }, 133: { x: 100, y: 100, z: 0 },
-      362: { x: 100, y: 100, z: 0 }, 263: { x: 100, y: 100, z: 0 },
-      1:   { x: 100, y: 100, z: 0 },
+      234: { x: 100, y: 100, z: 0 }, 454: { x: 100, y: 100, z: 0 },
+      1:   { x: 100, y: 100, z: 0 }, 152: { x: 100, y: 100, z: 0 },
     });
     const estimator = new PoseEstimator(0);
     const pose = estimator.estimateRaw(fl);

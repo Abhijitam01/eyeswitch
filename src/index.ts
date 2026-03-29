@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import * as readline from 'readline';
 import * as fs from 'fs';
 import { printBanner, CLI, createSpinner } from './cli.js';
 import {
@@ -8,7 +7,6 @@ import {
   mergeConfig,
   saveConfig,
   validateConfig,
-  CONFIG_FILE,
   SENSITIVITY_PRESETS,
 } from './config.js';
 import { FrameCapture } from './camera/frame-capture.js';
@@ -141,7 +139,7 @@ configCmd
   .action((key?: string) => {
     const cfg = loadConfig();
     if (key) {
-      const val = (cfg as Record<string, unknown>)[key];
+      const val = (cfg as unknown as Record<string, unknown>)[key];
       if (val === undefined) {
         CLI.error(`Unknown config key: ${key}`);
         process.exit(1);
@@ -174,20 +172,8 @@ configCmd
       process.exit(1);
     }
 
-    // Load raw file JSON (bypass Zod defaults so we only persist what the user set)
-    let fileData: Record<string, unknown> = {};
-    if (fs.existsSync(CONFIG_FILE)) {
-      try {
-        fileData = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) as Record<string, unknown>;
-      } catch {
-        // ignore — start fresh
-      }
-    }
-
-    const updated = { ...fileData, [key]: coerced };
     const cfg = mergeConfig(loadConfig(), { [key]: coerced });
     saveConfig(cfg);
-    void updated; // saved via saveConfig above
     CLI.success(`${key} = ${String(coerced)}`);
     process.exit(0);
   });
@@ -340,16 +326,23 @@ calCmd
       CLI.error(`Cannot read file: ${file}`);
       process.exit(1);
     }
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      CLI.error(`File is not valid JSON: ${file}`);
+      process.exit(1);
+    }
     let data: CalibrationData;
     try {
-      const parsed = CalibrationDataSchema.parse(JSON.parse(raw));
+      const parsed = CalibrationDataSchema.parse(json);
       data = Object.freeze({
         version: parsed.version,
         monitors: Object.freeze(parsed.monitors.map((m) => Object.freeze(m))),
         savedAt: parsed.savedAt,
       }) as CalibrationData;
     } catch (err) {
-      CLI.error(`Invalid calibration file: ${String(err)}`);
+      CLI.error(`Invalid calibration data: ${String(err)}`);
       process.exit(1);
     }
     calManager.save(data);
@@ -440,17 +433,26 @@ async function runCalibration(
     latestConfidence = landmarks?.score ?? null;
   });
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const waitForEnter = () =>
-    new Promise<void>((resolve) => rl.question('', () => resolve()));
+  // Use direct stdin data events instead of readline to avoid conflicts with
+  // the ora spinner (readline sets terminal modes that suppress spinner output).
+  const waitForEnter = (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      process.stdin.setEncoding('utf8');
+      process.stdin.resume();
+      process.stdin.once('data', () => {
+        process.stdin.pause();
+        resolve();
+      });
+    });
 
-  const newCalibrations = [];
+  const newCalibrations: import('./types.js').MonitorCalibration[] = [];
 
   for (let i = 0; i < monitorsToCalibrate.length; i++) {
     const monitor = monitorsToCalibrate[i];
     CLI.calibrationPrompt(monitor.name, i + 1, monitorsToCalibrate.length);
     await waitForEnter();
 
+    poseEstimator.reset(); // clear EMA state between monitors
     const spinner = createSpinner('Sampling…').start();
 
     const mc = await calManager.collectSamples(
@@ -471,7 +473,6 @@ async function runCalibration(
     newCalibrations.push(mc);
   }
 
-  rl.close();
   capture.stop();
   faceDetector.dispose();
 
@@ -548,7 +549,6 @@ async function runMain(
   let state: TrackingState = Object.freeze({
     currentMonitorId: focusSwitcher.currentMonitorId(),
     lastSwitchAt: 0,
-    frameCount: 0,
     isPaused: false,
   });
 
@@ -606,11 +606,6 @@ async function runMain(
     if (opts.verbose) {
       CLI.trackingStatus(monitorName, pose.yaw, pose.pitch);
     }
-
-    state = Object.freeze({
-      ...state,
-      frameCount: state.frameCount + 1,
-    });
 
     // Switch if target differs from current and cooldown elapsed
     const now = Date.now();

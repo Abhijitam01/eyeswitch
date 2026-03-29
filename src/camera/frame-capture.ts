@@ -30,7 +30,9 @@ export class FrameCapture {
   private readonly tmpFile: string;
   private readonly frameWidth = 640;
   private readonly frameHeight = 480;
-  private frameIndex = 0;
+  private isCapturing = false; // prevents concurrent imagesnap processes
+  private consecutiveFailures = 0;
+  private static readonly MAX_CONSECUTIVE_FAILURES = 5;
 
   constructor(
     private readonly cameraIndex: number = 0,
@@ -62,12 +64,28 @@ export class FrameCapture {
     const intervalMs = Math.round(1000 / this.targetFps);
 
     this.captureInterval = setInterval(() => {
-      this.captureOneFrame(onFrame).catch((err: unknown) => {
-        // Log but don't crash — transient camera errors are common
-        if (process.env.EYESWITCH_DEBUG) {
-          console.error('[FrameCapture] error:', err);
-        }
-      });
+      // Skip if a capture is already in progress — imagesnap takes ~1s per shot
+      // so concurrent invocations would race on the same temp file.
+      if (this.isCapturing) return;
+      this.isCapturing = true;
+      this.captureOneFrame(onFrame)
+        .then(() => {
+          this.consecutiveFailures = 0;
+        })
+        .catch((err: unknown) => {
+          this.consecutiveFailures++;
+          if (this.consecutiveFailures >= FrameCapture.MAX_CONSECUTIVE_FAILURES) {
+            console.error(
+              `[FrameCapture] ${this.consecutiveFailures} consecutive failures — check camera access:`,
+              err,
+            );
+          } else if (process.env.EYESWITCH_DEBUG) {
+            console.error('[FrameCapture] error:', err);
+          }
+        })
+        .finally(() => {
+          this.isCapturing = false;
+        });
     }, intervalMs);
   }
 
@@ -126,7 +144,6 @@ export class FrameCapture {
       timestamp: Date.now(),
     });
 
-    this.frameIndex++;
     onFrame(frame);
   }
 }

@@ -12,7 +12,7 @@ const ConfigSchema = z.object({
   smoothingFactor: z.number().min(0).max(0.99).default(0.3),
   switchCooldownMs: z.number().min(100).max(5000).default(500),
   hysteresisFactor: z.number().min(0).max(0.99).default(0.25),
-  minFaceConfidence: z.number().min(0.1).max(1).default(0.7),
+  minFaceConfidence: z.number().min(0.1).max(1).default(0.4),
   cameraIndex: z.number().int().min(0).default(0),
   calibrationFilePath: z
     .string()
@@ -100,15 +100,23 @@ export const SENSITIVITY_PRESETS: Record<SensitivityLevel, PartialConfig> = Obje
 /** Version of the calibration file format. */
 export const CALIBRATION_FORMAT_VERSION = 2;
 
-/** Number of seconds to sample gaze per monitor during calibration. */
-export const CALIBRATION_DURATION_S = 2;
+/** Number of seconds to sample gaze per monitor during calibration.
+ *  Increased to 8s to accommodate imagesnap's ~1fps effective capture rate on macOS. */
+export const CALIBRATION_DURATION_S = 8;
 
 /** Landmark index for nose tip in MediaPipe 468-point model. */
 export const NOSE_TIP_INDEX = 1;
 
-/** Landmark indices for left and right eye centres. */
-export const LEFT_EYE_INDICES = [33, 133] as const;
-export const RIGHT_EYE_INDICES = [362, 263] as const;
+/** Landmark index for chin tip. */
+export const CHIN_INDEX = 152;
+
+/**
+ * Lateral face outline landmarks used as horizontal reference for yaw/pitch.
+ * Using cheekbone/jaw-outline points (234 = left outline, 454 = right outline)
+ * instead of eye corners so glasses frames and lens reflections don't interfere.
+ */
+export const LEFT_EYE_INDICES = [234] as const;
+export const RIGHT_EYE_INDICES = [454] as const;
 
 /** Empirical yaw/pitch scaling factor from 2D offset ratio. */
 export const POSE_SCALING_FACTOR = 1.5;

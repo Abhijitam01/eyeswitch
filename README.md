@@ -245,6 +245,77 @@ npm run build:helper   # recompile eyeswitch-helper.m
 
 ---
 
-## License
 
-MIT
+
+ 1. Install dependencies & build the native helper                                                                                                                                                                                                                           
+   
+  cd /Users/abhijitam/Developer/focus/eyeswitch                                                                                                                                                                                                                               
+  npm install                                               
+  npm run build:helper    # compiles the ObjC binary (needs Xcode CLT)
+  npm run build           # tsc → dist/                                                                                                                                                                                                                                       
+   
+  2. Grant permissions (one-time)                                                                                                                                                                                                                                             
+                                                            
+  Camera — macOS will prompt automatically on first run.                                                                                                                                                                                                                      
+                                                            
+  Accessibility — must be done manually:                                                                                                                                                                                                                                      
+  System Settings → Privacy & Security → Accessibility → enable your terminal app
+                                                                                 
+  3. Check everything is wired up                                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                                                              
+  node dist/index.js doctor                                                                                                                                                                                                                                                   
+                                                                                                                                                                                                                                                                              
+  All 5 checks should show ✓. If accessibility or camera fails, fix those first.                                                                                                                                                                                              
+   
+  4. Calibrate                                                                                                                                                                                                                                                                
+                                                            
+  node dist/index.js calibrate
+
+  - It lists your monitors                                                                                                                                                                                                                                                    
+  - For each one: look at that screen → press Enter → hold still for 2 seconds
+  - Calibration is saved to ~/.config/eyeswitch/calibration.json                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                                              
+  5. Start tracking                                                                                                                                                                                                                                                           
+                                                                                                                                                                                                                                                                              
+  node dist/index.js                                        
+
+  Look at a different monitor — focus moves to it automatically.                                                                                                                                                                                                              
+   
+  ---                                                                                                                                                                                                                                                                         
+  Useful flags while developing                             
+
+  # See gaze values without actually switching focus
+  node dist/index.js --dry-run                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                              
+  # More responsive (good for testing)                                                                                                                                                                                                                                        
+  node dist/index.js --sensitivity high                                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                              
+  # Recalibrate just one monitor (1-based index)                                                                                                                                                                                                                              
+  node dist/index.js calibrate --monitor 2                                                                                                                                                                                                                                    
+                                                                                                                                                                                                                                                                              
+  # Check/change config                                                                                                                                                                                                                                                       
+  node dist/index.js config get
+  node dist/index.js config set switchCooldownMs 300                                                                                                                                                                                                                          
+                                                                                                                                                                                                                                                                              
+  Run tests
+                                                                                                                                                                                                                                                                              
+  npm test                          # all tests             
+  npm test -- --watch               # watch mode
+  npm test -- --coverage            # with coverage report                                                                                                                                                                                                                    
+   
+  ---                                                                                                                                                                                                                                                                         
+  Common issues                                             
+               
+  ┌───────────────────────────────┬────────────────────────────────────────────────────┐
+  │            Problem            │                        Fix                         │                                                                                                                                                                                      
+  ├───────────────────────────────┼────────────────────────────────────────────────────┤
+  │ npm run build:helper fails    │ Run xcode-select --install first                   │                                                                                                                                                                                      
+  ├───────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Focus doesn't switch          │ Check Accessibility permission in System Settings  │                                                                                                                                                                                      
+  ├───────────────────────────────┼────────────────────────────────────────────────────┤
+  │ "Native helper not available" │ Run npm run build:helper                           │                                                                                                                                                                                      
+  ├───────────────────────────────┼────────────────────────────────────────────────────┤                                                                                                                                                                                      
+  │ Camera not found              │ Try --camera 1 (if you have multiple webcams)      │
+  ├───────────────────────────────┼────────────────────────────────────────────────────┤                                                                                                                                                                                      
+  │ Jittery switching             │ Use --sensitivity low or increase switchCooldownMs │
+  └───────────────────────────────┴────────────────────────────────────────────────────┘                    

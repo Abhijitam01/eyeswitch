@@ -1,5 +1,6 @@
 import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
 import '@tensorflow/tfjs-node';
+import * as tf from '@tensorflow/tfjs-core';
 import { createCanvas } from 'canvas';
 import type { FrameBuffer, FaceLandmarks, Point3D } from '../types.js';
 
@@ -19,6 +20,11 @@ export class FaceDetector {
    * Must be called before any call to detect().
    */
   async initialize(): Promise<void> {
+    // The tfjs-node native backend doesn't have the 'Transform' kernel required
+    // by MediaPipe FaceMesh. Fall back to the pure-JS CPU backend which has it.
+    await tf.setBackend('cpu');
+    await tf.ready();
+
     const model = faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh;
     this.detector = await faceLandmarksDetection.createDetector(model, {
       runtime: 'tfjs',
