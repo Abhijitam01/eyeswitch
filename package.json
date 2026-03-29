@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "description": "Head-tracking monitor focus switcher for macOS — look at a screen, it gets focus",
   "license": "MIT",
-  "author": "",
+  "author": "Abhijitam01",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/eyeswitch.git"
+    "url": "https://github.com/Abhijitam01/eyeswitch.git"
+  },
+  "homepage": "https://github.com/Abhijitam01/eyeswitch#readme",
+  "bugs": {
+    "url": "https://github.com/Abhijitam01/eyeswitch/issues"
   },
   "keywords": ["monitor", "focus", "head-tracking", "webcam", "macos", "accessibility"],
   "bin": {
@@ -38,7 +42,7 @@
     "canvas": "^2.11.2",
     "chalk": "^5.3.0",
     "commander": "^12.0.0",
-"node-webcam": "^0.8.2",
+    "node-webcam": "^0.8.2",
     "ora": "^8.0.1",
     "zod": "^3.22.4"
   },
