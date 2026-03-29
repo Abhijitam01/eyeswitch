@@ -6,14 +6,9 @@
 [![npm downloads](https://img.shields.io/npm/dm/eyeswitch)](https://www.npmjs.com/package/eyeswitch)
 [![license](https://img.shields.io/github/license/Abhijitam01/eyeswitch)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/Abhijitam01/eyeswitch)
+[![website](https://img.shields.io/badge/website-eyeswitch.abhijitamdubey.site-blue)](https://eyeswitch.abhijitamdubey.site)
 
 eyeswitch uses your webcam and TensorFlow.js to track where your head is pointing, then automatically moves macOS focus to whichever monitor you're looking at — no keyboard shortcut, no clicking, no magic.
-
----
-
-## Demo
-
-> Calibrate once. Then just look at a screen — focus follows your gaze automatically.
 
 ---
 
@@ -50,17 +45,10 @@ npm run build:helper
 ## Quick start
 
 ```bash
-# 1. Check everything is set up correctly
-eyeswitch doctor
-
-# 2. Calibrate — look at each monitor when prompted
-eyeswitch calibrate
-
-# 3. Start tracking
-eyeswitch
+eyeswitch doctor      # check everything is set up
+eyeswitch calibrate   # look at each monitor when prompted
+eyeswitch             # start tracking
 ```
-
-That's it. Look at a different screen — focus follows.
 
 Press **`p`** to pause/resume. **Ctrl+C** to stop.
 
@@ -83,7 +71,7 @@ Options:
 
 ### `eyeswitch calibrate`
 
-Walk through per-monitor calibration. Look at each screen and press Enter — eyeswitch samples your gaze for ~8 seconds per monitor and saves the result.
+Look at each screen and press Enter — eyeswitch samples your gaze for ~8 seconds per monitor and saves the result.
 
 ```bash
 eyeswitch calibrate               # calibrate all monitors
@@ -92,7 +80,7 @@ eyeswitch calibrate --monitor 2   # recalibrate only monitor 2 (1-based)
 
 ### `eyeswitch doctor`
 
-Diagnose your setup — checks the native helper, camera, accessibility permission, calibration data, and TF.js model:
+Checks the native helper, camera, accessibility permission, calibration data, and TF.js model:
 
 ```
   ✓  Native helper binary
@@ -101,8 +89,6 @@ Diagnose your setup — checks the native helper, camera, accessibility permissi
   ✓  Calibration data          2 monitors calibrated
   ✓  TF.js model
 ```
-
-Exits 0 if everything is healthy, 1 if any check fails.
 
 ### `eyeswitch config get [key]`
 
@@ -141,7 +127,7 @@ eyeswitch calibration export -o ~/cal-backup.json
 
 ### `eyeswitch calibration import <file>`
 
-Import calibration from a JSON file (restore a backup or share across machines).
+Import calibration from a JSON file.
 
 ```bash
 eyeswitch calibration import ~/cal-backup.json
@@ -164,8 +150,6 @@ All values live in `~/.config/eyeswitch/config.json`. Edit with `eyeswitch confi
 | `verticalSwitching` | `false` | Enable pitch-based switching for top/bottom monitor layouts |
 
 ### Sensitivity presets
-
-Instead of tuning individual values, use `--sensitivity`:
 
 | Preset | smoothingFactor | hysteresisFactor | switchCooldownMs |
 |---|---|---|---|
@@ -198,10 +182,10 @@ eyeswitch --sensitivity low    # more stable, fewer accidental switches
 
 1. Your webcam captures frames via `node-webcam`
 2. TensorFlow.js + MediaPipe FaceMesh extracts 468 3D facial landmarks per frame
-3. Yaw (horizontal) and pitch (vertical) are computed from jaw-outline and nose-tip landmarks — specifically designed to be glasses-agnostic
-4. An EMA filter smooths the pose to prevent jitter
-5. A calibration map translates your current gaze angles to the nearest monitor using Euclidean distance with hysteresis (so you don't accidentally switch while glancing)
-6. The native ObjC helper (`eyeswitch-helper`) uses CoreGraphics to warp the cursor and the Accessibility API to fire a synthetic click, transferring focus
+3. Yaw and pitch are computed from jaw-outline and nose-tip landmarks (works with glasses)
+4. An EMA filter smooths the pose to cut down on jitter
+5. A calibration map translates gaze angles to the nearest monitor using Euclidean distance with hysteresis
+6. The native ObjC helper (`eyeswitch-helper`) uses CoreGraphics to warp the cursor and the Accessibility API to fire a synthetic click
 
 ---
 
@@ -220,10 +204,9 @@ eyeswitch --sensitivity low    # more stable, fewer accidental switches
 ```bash
 git clone https://github.com/Abhijitam01/eyeswitch.git
 cd eyeswitch
-npm install          # also compiles the native helper
-npm run build        # tsc → dist/
-npm test             # jest — 115 tests
-npm run typecheck    # tsc --noEmit
+npm install
+npm run build
+npm test
 ```
 
 To iterate on the native ObjC helper:
@@ -257,12 +240,6 @@ src/
     helper/
       eyeswitch-helper.m    Native ObjC binary (CoreGraphics, Accessibility)
 ```
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE)
 
 ---
 
