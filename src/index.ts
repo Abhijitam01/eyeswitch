@@ -19,7 +19,7 @@ import { FocusSwitcher } from './monitor/focus-switcher.js';
 import {
   isHelperAvailable,
   checkAccessibilityPermission,
-} from './native/macos-bridge.js';
+} from './native/native-bridge.js';
 import type {
   FrameBuffer,
   HeadPose,
@@ -208,8 +208,10 @@ program
       'Accessibility permission',
       axOk,
       axOk
-        ? 'AXIsProcessTrusted = true'
-        : 'System Settings → Privacy & Security → Accessibility → enable Terminal',
+        ? 'Permission granted'
+        : process.platform === 'win32'
+          ? 'Helper binary may be missing — run "npm run build:helper"'
+          : 'System Settings → Privacy & Security → Accessibility → enable Terminal',
     );
     allOk = allOk && axOk;
 
@@ -552,9 +554,29 @@ async function runMain(
     isPaused: false,
   });
 
-  // Pause on 'p' keypress
+  // Graceful shutdown — declared before capture so the reference is always safe
+  let running = true;
+  let capture: FrameCapture | null = null;
+
+  const shutdown = () => {
+    // Hard-exit fallback: if cleanup hangs for >3 s, force-quit
+    setTimeout(() => process.exit(1), 3000).unref();
+    try {
+      running = false;
+      capture?.stop();
+      faceDetector.dispose();
+    } catch { /* ignore cleanup errors so process.exit always runs */ }
+    CLI.newline();
+    CLI.info('eyeswitch stopped');
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  // Keypress handler — placed after signal handlers so Ctrl+C always has a target
   if (process.stdin.isTTY) {
     process.stdin.setRawMode(true);
+    process.stdin.resume(); // ensure the stream is flowing so data events fire
     process.stdin.on('data', (buf: Buffer) => {
       if (buf.toString() === 'p') {
         state = Object.freeze({ ...state, isPaused: !state.isPaused });
@@ -564,25 +586,12 @@ async function runMain(
           CLI.info('\nTracking resumed');
         }
       }
-      // Ctrl+C
+      // Ctrl+C in raw mode — Node does not auto-emit SIGINT, so we do it manually
       if (buf[0] === 3) process.emit('SIGINT');
     });
   }
 
-  // Graceful shutdown
-  let running = true;
-  const shutdown = () => {
-    running = false;
-    capture.stop();
-    faceDetector.dispose();
-    CLI.newline();
-    CLI.info('eyeswitch stopped');
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-
-  const capture = new FrameCapture(cfg.cameraIndex, cfg.targetFps);
+  capture = new FrameCapture(cfg.cameraIndex, cfg.targetFps);
   capture.start(async (frame: FrameBuffer) => {
     if (!running || state.isPaused) return;
 

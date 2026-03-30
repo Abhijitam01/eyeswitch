@@ -21,18 +21,25 @@ const MonitorSchema = z.object({
 const MonitorListSchema = z.array(MonitorSchema);
 
 // ---------------------------------------------------------------------------
-// Helper binary location
+// Helper binary location — platform-aware
 // ---------------------------------------------------------------------------
 
+const HELPER_BINARY = process.platform === 'win32'
+  ? 'eyeswitch-helper.exe'
+  : 'eyeswitch-helper';
+
 const HELPER_PATH = path.resolve(
-  path.join(__dirname, '..', '..', 'bin', 'eyeswitch-helper'),
+  path.join(__dirname, '..', '..', 'bin', HELPER_BINARY),
 );
 
 function assertHelperExists(): void {
   if (!fs.existsSync(HELPER_PATH)) {
+    const buildCmd = process.platform === 'win32'
+      ? '"npm run build:helper" (requires MinGW/MSYS2 with gcc, or MSVC)'
+      : '"npm run build:helper" (requires Xcode Command Line Tools)';
     throw new Error(
       `eyeswitch-helper binary not found at ${HELPER_PATH}.\n` +
-        'Run "npm run build:helper" to compile it (requires Xcode Command Line Tools).',
+        `Run ${buildCmd} to compile it.`,
     );
   }
 }
@@ -51,7 +58,7 @@ function runHelper(args: string[]): string {
 // ---------------------------------------------------------------------------
 
 /**
- * List all active macOS displays.
+ * List all active displays.
  * Returns an immutable MonitorLayout.
  */
 export function listMonitors(): MonitorLayout {
@@ -114,8 +121,9 @@ export function warpMonitor(displayId: number): void {
 }
 
 /**
- * Returns true if macOS Accessibility permission is granted for this process.
- * Returns false if denied or if the helper is unavailable.
+ * Returns true if the required system permissions are granted.
+ * On macOS this checks Accessibility (AX) permission via the helper.
+ * On Windows this always returns true — no special permissions needed.
  */
 export function checkAccessibilityPermission(): boolean {
   try {

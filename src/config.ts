@@ -8,6 +8,13 @@ import type { EyeSwitchConfig, PartialConfig } from './types.js';
 // Schema
 // ---------------------------------------------------------------------------
 
+// Platform-aware config directory:
+//   macOS/Linux → ~/.config/eyeswitch
+//   Windows     → %APPDATA%\eyeswitch  (e.g. C:\Users\<user>\AppData\Roaming\eyeswitch)
+const DEFAULT_CONFIG_DIR: string = process.platform === 'win32'
+  ? path.join(process.env['APPDATA'] ?? os.homedir(), 'eyeswitch')
+  : path.join(os.homedir(), '.config', 'eyeswitch');
+
 const ConfigSchema = z.object({
   smoothingFactor: z.number().min(0).max(0.99).default(0.3),
   switchCooldownMs: z.number().min(100).max(5000).default(500),
@@ -16,7 +23,7 @@ const ConfigSchema = z.object({
   cameraIndex: z.number().int().min(0).default(0),
   calibrationFilePath: z
     .string()
-    .default(path.join(os.homedir(), '.config', 'eyeswitch', 'calibration.json')),
+    .default(path.join(DEFAULT_CONFIG_DIR, 'calibration.json')),
   targetFps: z.number().int().min(5).max(60).default(30),
   verticalSwitching: z.boolean().default(false),
 });
@@ -27,7 +34,7 @@ const ConfigSchema = z.object({
 
 export const DEFAULT_CONFIG: EyeSwitchConfig = Object.freeze(ConfigSchema.parse({}));
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'eyeswitch');
+const CONFIG_DIR = DEFAULT_CONFIG_DIR;
 export const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 // ---------------------------------------------------------------------------

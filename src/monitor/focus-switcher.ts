@@ -1,11 +1,11 @@
-import { focusMonitor, warpMonitor, getFocusedMonitorId, isHelperAvailable } from '../native/macos-bridge.js';
+import { focusMonitor, warpMonitor, getFocusedMonitorId, isHelperAvailable } from '../native/native-bridge.js';
 
 // ---------------------------------------------------------------------------
 // FocusSwitcher
 // ---------------------------------------------------------------------------
 
 /**
- * Switches macOS focus to the given monitor via the native helper.
+ * Switches focus to the given monitor via the native helper (macOS + Windows).
  * In dry-run mode all operations are logged but not executed.
  */
 export class FocusSwitcher {

@@ -1,4 +1,4 @@
-import { listMonitors, isHelperAvailable } from '../native/macos-bridge.js';
+import { listMonitors, isHelperAvailable } from '../native/native-bridge.js';
 import type { MonitorLayout } from '../types.js';
 
 // ---------------------------------------------------------------------------
@@ -6,7 +6,7 @@ import type { MonitorLayout } from '../types.js';
 // ---------------------------------------------------------------------------
 
 /**
- * Detects connected monitors via the native macOS helper binary.
+ * Detects connected monitors via the native helper binary.
  * Falls back to a single-monitor stub if the helper is not available.
  */
 export class MonitorDetector {

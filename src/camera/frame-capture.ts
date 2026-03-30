@@ -49,6 +49,12 @@ export class FrameCapture {
       throw new Error('FrameCapture is already running');
     }
 
+    // node-webcam uses imagesnap on macOS and ffmpeg on Windows/Linux.
+    // On Windows, the DirectShow (dshow) input format is used via ffmpeg.
+    const deviceOpt: string | false = process.platform === 'win32'
+      ? (this.cameraIndex === 0 ? 'dshow' : `dshow:video=${this.cameraIndex}`)
+      : (this.cameraIndex === 0 ? false : `/dev/video${this.cameraIndex}`);
+
     this.webcam = NodeWebcam.create({
       width: this.frameWidth,
       height: this.frameHeight,
@@ -56,7 +62,7 @@ export class FrameCapture {
       delay: 0,
       saveShots: true,
       output: 'jpeg',
-      device: this.cameraIndex === 0 ? false : `/dev/video${this.cameraIndex}`,
+      device: deviceOpt,
       callbackReturn: 'location',
       verbose: false,
     });

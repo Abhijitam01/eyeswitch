@@ -1,7 +1,7 @@
 {
   "name": "eyeswitch",
-  "version": "1.0.2",
-  "description": "Head-tracking monitor focus switcher for macOS — look at a screen, it gets focus",
+  "version": "1.0.3",
+  "description": "Head-tracking monitor focus switcher — look at a screen, it gets focus",
   "license": "MIT",
   "author": "Abhijitam01",
   "repository": {
@@ -32,21 +32,22 @@
   ],
   "scripts": {
     "build": "tsc",
-    "build:helper": "clang -framework Cocoa -framework CoreGraphics -framework AppKit -framework ApplicationServices src/native/helper/eyeswitch-helper.m -o bin/eyeswitch-helper 2>&1",
-    "postinstall": "npm run build:helper || echo 'Warning: Native helper build failed. Monitor detection may be limited.'",
+    "build:helper": "node scripts/build-helper.js",
+    "postinstall": "npm run build:helper",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\""
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "os": [
-    "darwin"
+    "darwin",
+    "win32"
   ],
   "dependencies": {
     "@tensorflow-models/face-landmarks-detection": "^1.0.5",

@@ -9,7 +9,7 @@ const mockFocusMonitor = jest.fn<void, [number]>();
 const mockWarpMonitor = jest.fn<void, [number]>();
 const mockGetFocusedMonitorId = jest.fn<number, []>();
 
-jest.mock('../../src/native/macos-bridge', () => ({
+jest.mock('../../src/native/native-bridge', () => ({
   isHelperAvailable: () => mockIsHelperAvailable(),
   focusMonitor: (id: number) => mockFocusMonitor(id),
   warpMonitor: (id: number) => mockWarpMonitor(id),

@@ -236,9 +236,10 @@ src/
     monitor-detector.ts     Queries monitor layout via native helper
     monitor-mapper.ts       Maps gaze to MonitorLayout using calibration data
   native/
-    macos-bridge.ts         TypeScript wrapper around the ObjC binary
+    native-bridge.ts        Cross-platform TypeScript wrapper for the native helper
     helper/
-      eyeswitch-helper.m    Native ObjC binary (CoreGraphics, Accessibility)
+      eyeswitch-helper.m    macOS native helper (CoreGraphics, Accessibility)
+      eyeswitch-helper-win.c  Windows native helper (Win32 user32/gdi32)
 ```
 
 ---
