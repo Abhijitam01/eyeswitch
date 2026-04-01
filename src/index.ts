@@ -218,14 +218,14 @@ program
     // 3. Camera
     let cameraOk = false;
     try {
-      const capture = new FrameCapture(cfg.cameraIndex, 1);
+      const capture = new FrameCapture(cfg.cameraIndex, 2);
       // A quick probe: open and immediately stop
       await new Promise<void>((resolve, reject) => {
         let opened = false;
         const timeout = setTimeout(() => {
           if (!opened) reject(new Error('timeout'));
-        }, 3000);
-        capture.start(async () => {
+        }, 8000); // DirectShow init on Windows can take a few seconds
+        capture.start(() => {
           if (!opened) {
             opened = true;
             clearTimeout(timeout);
@@ -238,13 +238,12 @@ program
     } catch {
       cameraOk = false;
     }
-    CLI.doctorCheck(
-      'Camera access',
-      cameraOk,
-      cameraOk
-        ? `Camera index ${cfg.cameraIndex} opened`
-        : 'Grant camera access: System Settings → Privacy & Security → Camera',
-    );
+    const cameraHint = cameraOk
+      ? `Camera index ${cfg.cameraIndex} opened`
+      : process.platform === 'win32'
+        ? 'Settings → Privacy & Security → Camera → enable desktop app access'
+        : 'System Settings → Privacy & Security → Camera → enable Terminal';
+    CLI.doctorCheck('Camera access', cameraOk, cameraHint);
     allOk = allOk && cameraOk;
 
     // 4. Calibration data
@@ -390,6 +389,38 @@ program.parseAsync(process.argv).catch((err: unknown) => {
 });
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to capture at least one frame within 8 seconds.
+ * Used on Windows to detect camera permission issues before model loading.
+ */
+async function probeCameraAccess(cameraIndex: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const capture = new FrameCapture(cameraIndex, 2);
+    let done = false;
+
+    const timer = setTimeout(() => {
+      if (!done) {
+        done = true;
+        capture.stop();
+        resolve(false);
+      }
+    }, 8000);
+
+    capture.start(() => {
+      if (!done) {
+        done = true;
+        clearTimeout(timer);
+        capture.stop();
+        resolve(true);
+      }
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Calibration flow
 // ---------------------------------------------------------------------------
 
@@ -505,6 +536,28 @@ async function runMain(
   const monitorDetector = new MonitorDetector();
   const calManager = new CalibrationManager(cfg.calibrationFilePath);
   const focusSwitcher = new FocusSwitcher(opts.dryRun, opts.noClick);
+
+  // On Windows: verify camera access before spending time loading the model.
+  // If the Privacy & Security → Camera toggle is off, ffmpeg exits immediately
+  // and eyeswitch appears to "do nothing" — surfacing this upfront saves confusion.
+  if (process.platform === 'win32') {
+    const camSpinner = createSpinner('Checking camera access…').start();
+    const cameraOk = await probeCameraAccess(cfg.cameraIndex);
+    if (cameraOk) {
+      camSpinner.succeed('Camera accessible');
+    } else {
+      camSpinner.fail('Camera access denied');
+      console.error('');
+      CLI.warn(
+        'eyeswitch needs camera access to track your gaze.\n\n' +
+        '  1. Open  Windows Settings\n' +
+        '  2. Go to  Privacy & Security → Camera\n' +
+        '  3. Enable "Let desktop apps access your camera"\n' +
+        '  4. Re-run eyeswitch\n',
+      );
+      process.exit(1);
+    }
+  }
 
   // Check Accessibility permission and warn if missing
   if (!opts.dryRun && !checkAccessibilityPermission()) {

@@ -1,168 +1,255 @@
-import NodeWebcam from 'node-webcam';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
-import { createCanvas, loadImage } from '@napi-rs/canvas';
+import { spawn, spawnSync, type ChildProcess } from 'child_process';
+import { loadImage, createCanvas } from '@napi-rs/canvas';
 import type { FrameBuffer } from '../types.js';
 
 // ---------------------------------------------------------------------------
-// Types
+// FrameCapture — ffmpeg-based, cross-platform
 // ---------------------------------------------------------------------------
+//
+// Streams MJPEG frames from the webcam via ffmpeg's stdout pipe.
+// Eliminates imagesnap and all disk I/O that was heating up the system.
+//
+// Perf notes:
+//   • 320×240 capture — 4× fewer pixels than 640×480; sufficient for FaceMesh
+//   • `decoding` flag drops incoming frames while TF.js is still inferring
+//   • Default 5 fps (head tracking doesn't need more)
 
 export type FrameCallback = (frame: FrameBuffer) => void;
+
+const CAPTURE_WIDTH  = 320;
+const CAPTURE_HEIGHT = 240;
+
+// JPEG SOI / EOI byte sequences used to delimit frames in the MJPEG pipe
+const SOI = Buffer.from([0xff, 0xd8]);
+const EOI = Buffer.from([0xff, 0xd9]);
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getFfmpegPath(): string {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('ffmpeg-static') as string;
+  } catch {
+    return 'ffmpeg'; // fall back to system PATH
+  }
+}
+
+/**
+ * List DirectShow video device names on Windows.
+ * Returns an ordered array; index 0 is the first camera.
+ */
+function listWindowsVideoDevices(): string[] {
+  try {
+    const result = spawnSync(
+      getFfmpegPath(),
+      ['-f', 'dshow', '-list_devices', 'true', '-i', 'dummy'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    const output = result.stderr ?? '';
+    const devices: string[] = [];
+    let inVideoSection = false;
+
+    for (const line of output.split(/\r?\n/)) {
+      if (line.includes('DirectShow video devices')) {
+        inVideoSection = true;
+        continue;
+      }
+      if (inVideoSection && line.includes('DirectShow audio devices')) break;
+      if (!inVideoSection) continue;
+
+      // Lines look like:  [dshow @ 0xaddr]  "Camera Name"
+      // Alternative name lines start with "@device_" — skip those
+      const m = line.match(/"([^"]+)"/);
+      if (m && !m[1].startsWith('@')) {
+        devices.push(m[1].trim());
+      }
+    }
+    return devices;
+  } catch {
+    return [];
+  }
+}
+
+function buildInputArgs(cameraIndex: number): string[] {
+  if (process.platform === 'darwin') {
+    // '<video>:none' selects video device N with no audio
+    return ['-f', 'avfoundation', '-i', `${cameraIndex}:none`];
+  }
+
+  if (process.platform === 'win32') {
+    const devices = listWindowsVideoDevices();
+    const deviceName = devices[cameraIndex] ?? devices[0];
+    if (!deviceName) {
+      throw new Error(
+        'No camera found.\n' +
+        '  Make sure your webcam is connected and not in use by another application.\n' +
+        '  Then: Windows Settings → Privacy & Security → Camera\n' +
+        '        → enable "Let desktop apps access your camera"',
+      );
+    }
+    return ['-f', 'dshow', '-i', `video=${deviceName}`];
+  }
+
+  // Linux / other
+  return ['-f', 'v4l2', '-i', `/dev/video${cameraIndex}`];
+}
 
 // ---------------------------------------------------------------------------
 // FrameCapture
 // ---------------------------------------------------------------------------
 
-/**
- * Captures webcam frames as FrameBuffer objects.
- *
- * node-webcam captures images to disk (JPEG); we read the file back,
- * decode it onto a canvas, and extract the raw RGBA pixel data.
- *
- * This approach keeps us dependency-light while still being compatible
- * with TF.js which consumes canvas ImageData.
- */
 export class FrameCapture {
-  private webcam: ReturnType<typeof NodeWebcam.create> | null = null;
-  private captureInterval: ReturnType<typeof setInterval> | null = null;
-  private readonly tmpFile: string;
-  private readonly frameWidth = 640;
-  private readonly frameHeight = 480;
-  private isCapturing = false; // prevents concurrent imagesnap processes
-  private consecutiveFailures = 0;
-  private static readonly MAX_CONSECUTIVE_FAILURES = 5;
+  private ffmpegProc: ChildProcess | null = null;
+  private decoding = false;  // true while a JPEG frame is being decoded by @napi-rs/canvas
+  private intentionalStop = false;
 
   constructor(
     private readonly cameraIndex: number = 0,
-    private readonly targetFps: number = 30,
-  ) {
-    this.tmpFile = path.join(os.tmpdir(), `eyeswitch-frame-${process.pid}`);
-  }
+    private readonly targetFps: number = 5,
+  ) {}
 
   /**
-   * Start capturing frames, calling `onFrame` for each decoded frame.
+   * Start streaming frames from the camera.
+   * Calls `onFrame` for each decoded FrameBuffer.
    */
   start(onFrame: FrameCallback): void {
-    if (this.captureInterval !== null) {
+    if (this.ffmpegProc !== null) {
       throw new Error('FrameCapture is already running');
     }
+    this.intentionalStop = false;
 
-    // On Windows, node-webcam shells out to ffmpeg. Prepend the bundled
-    // ffmpeg-static binary directory to PATH so no manual install is needed.
-    if (process.platform === 'win32') {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const ffmpegPath = require('ffmpeg-static') as string;
-        const ffmpegDir  = path.dirname(ffmpegPath);
-        process.env.PATH = `${ffmpegDir}${path.delimiter}${process.env.PATH ?? ''}`;
-      } catch {
-        // ffmpeg-static unavailable — user may need to install ffmpeg manually
-      }
+    let inputArgs: string[];
+    try {
+      inputArgs = buildInputArgs(this.cameraIndex);
+    } catch (err) {
+      console.error('\n[FrameCapture]', String(err));
+      return;
     }
 
-    // node-webcam uses imagesnap on macOS and ffmpeg on Windows/Linux.
-    // On Windows, the DirectShow (dshow) input format is used via ffmpeg.
-    const deviceOpt: string | false = process.platform === 'win32'
-      ? (this.cameraIndex === 0 ? 'dshow' : `dshow:video=${this.cameraIndex}`)
-      : (this.cameraIndex === 0 ? false : `/dev/video${this.cameraIndex}`);
+    const ffmpeg = getFfmpegPath();
+    const args = [
+      '-loglevel', 'error',
+      ...inputArgs,
+      // Scale down + limit fps in the video filter — reduces encoder workload
+      '-vf', `fps=${this.targetFps},scale=${CAPTURE_WIDTH}:${CAPTURE_HEIGHT}`,
+      '-f', 'image2pipe',
+      '-vcodec', 'mjpeg',
+      '-q:v', '5',   // JPEG quality (2=best quality/large, 31=worst/small); 5 is a good balance
+      'pipe:1',
+    ];
 
-    this.webcam = NodeWebcam.create({
-      width: this.frameWidth,
-      height: this.frameHeight,
-      quality: 85,
-      delay: 0,
-      saveShots: true,
-      output: 'jpeg',
-      device: deviceOpt,
-      callbackReturn: 'location',
-      verbose: false,
+    this.ffmpegProc = spawn(ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+    // Collect stderr to surface helpful messages on failure
+    let stderrBuf = '';
+    this.ffmpegProc.stderr?.on('data', (d: Buffer) => {
+      const msg = d.toString();
+      stderrBuf += msg;
+      if (process.env.EYESWITCH_DEBUG) {
+        process.stderr.write('[ffmpeg] ' + msg);
+      }
     });
 
-    const intervalMs = Math.round(1000 / this.targetFps);
+    this.ffmpegProc.on('error', (err) => {
+      console.error('[FrameCapture] Failed to launch ffmpeg:', err.message);
+    });
 
-    this.captureInterval = setInterval(() => {
-      // Skip if a capture is already in progress — imagesnap takes ~1s per shot
-      // so concurrent invocations would race on the same temp file.
-      if (this.isCapturing) return;
-      this.isCapturing = true;
-      this.captureOneFrame(onFrame)
-        .then(() => {
-          this.consecutiveFailures = 0;
-        })
-        .catch((err: unknown) => {
-          this.consecutiveFailures++;
-          if (this.consecutiveFailures >= FrameCapture.MAX_CONSECUTIVE_FAILURES) {
-            console.error(
-              `[FrameCapture] ${this.consecutiveFailures} consecutive failures — check camera access:`,
-              err,
-            );
-          } else if (process.env.EYESWITCH_DEBUG) {
-            console.error('[FrameCapture] error:', err);
-          }
-        })
-        .finally(() => {
-          this.isCapturing = false;
-        });
-    }, intervalMs);
+    this.ffmpegProc.on('close', (code) => {
+      if (!this.intentionalStop && code !== 0 && stderrBuf.trim().length > 0) {
+        console.error('\n[FrameCapture] Camera error:\n  ' + stderrBuf.trim().replace(/\n/g, '\n  '));
+        if (process.platform === 'win32') {
+          console.error(
+            '\n  Fix: Windows Settings → Privacy & Security → Camera\n' +
+            '       → enable "Let desktop apps access your camera"\n' +
+            '       → then restart eyeswitch',
+          );
+        } else if (process.platform === 'darwin') {
+          console.error(
+            '\n  Fix: System Settings → Privacy & Security → Camera\n' +
+            '       → enable access for Terminal (or your terminal app)',
+          );
+        }
+      }
+      this.ffmpegProc = null;
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let pending: any = Buffer.alloc(0);
+    this.ffmpegProc.stdout?.on('data', (chunk: Buffer) => {
+      pending = Buffer.concat([pending, chunk]);
+      pending = this.extractFrames(pending, onFrame);
+    });
   }
 
-  /**
-   * Stop capturing frames.
-   */
+  /** Stop the ffmpeg process and clean up. */
   stop(): void {
-    if (this.captureInterval !== null) {
-      clearInterval(this.captureInterval);
-      this.captureInterval = null;
-    }
-    // Clean up tmp files
-    for (const ext of ['.jpg', '.jpeg']) {
-      const f = `${this.tmpFile}${ext}`;
-      if (fs.existsSync(f)) {
-        try { fs.unlinkSync(f); } catch { /* ignore */ }
-      }
+    this.intentionalStop = true;
+    if (this.ffmpegProc) {
+      try { this.ffmpegProc.kill('SIGKILL'); } catch { /* ignore */ }
+      this.ffmpegProc = null;
     }
   }
 
   get isRunning(): boolean {
-    return this.captureInterval !== null;
+    return this.ffmpegProc !== null;
   }
 
   // ---------------------------------------------------------------------------
   // Internal
   // ---------------------------------------------------------------------------
 
-  private async captureOneFrame(onFrame: FrameCallback): Promise<void> {
-    if (!this.webcam) return;
+  /**
+   * Scan `buf` for complete JPEG frames (SOI…EOI).
+   * Dispatches each complete frame for decoding (dropping if still busy).
+   * Returns leftover bytes that belong to the next (incomplete) frame.
+   */
+  private extractFrames(buf: Buffer, onFrame: FrameCallback): Buffer {
+    let pos = 0;
 
-    const filename = this.tmpFile;
+    while (pos < buf.length) {
+      const soiIdx = buf.indexOf(SOI, pos);
+      if (soiIdx < 0) break; // no start-of-image found — discard leading bytes
 
-    await new Promise<void>((resolve, reject) => {
-      this.webcam!.capture(filename, (err: Error | null) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+      const eoiIdx = buf.indexOf(EOI, soiIdx + 2);
+      if (eoiIdx < 0) {
+        // Incomplete frame — keep everything from SOI onward for the next chunk
+        return buf.slice(soiIdx);
+      }
 
-    // node-webcam appends the extension
-    const actualFile = fs.existsSync(`${filename}.jpg`)
-      ? `${filename}.jpg`
-      : `${filename}.jpeg`;
+      const frameEnd = eoiIdx + 2;
+      const jpeg = buf.slice(soiIdx, frameEnd);
+      pos = frameEnd;
 
-    const img = await loadImage(actualFile);
-    const canvas = createCanvas(this.frameWidth, this.frameHeight);
+      if (!this.decoding) {
+        this.decoding = true;
+        this.decodeAndDispatch(jpeg, onFrame).finally(() => {
+          this.decoding = false;
+        });
+      }
+      // else: TF.js is still busy with the previous frame — drop this one
+    }
+
+    return buf.slice(pos); // bytes after the last consumed frame
+  }
+
+  private async decodeAndDispatch(jpeg: Buffer, onFrame: FrameCallback): Promise<void> {
+    // Cast to any — loadImage accepts Buffer but @napi-rs/canvas types expect ArrayBuffer
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const img = await loadImage(jpeg as any);
+    const canvas = createCanvas(CAPTURE_WIDTH, CAPTURE_HEIGHT);
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, this.frameWidth, this.frameHeight);
-    const imageData = ctx.getImageData(0, 0, this.frameWidth, this.frameHeight);
+    ctx.drawImage(img, 0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
+    const imageData = ctx.getImageData(0, 0, CAPTURE_WIDTH, CAPTURE_HEIGHT);
 
-    const frame: FrameBuffer = Object.freeze({
-      data: new Uint8ClampedArray(imageData.data),
-      width: this.frameWidth,
-      height: this.frameHeight,
-      timestamp: Date.now(),
-    });
-
-    onFrame(frame);
+    onFrame(
+      Object.freeze({
+        data: new Uint8ClampedArray(imageData.data),
+        width:  CAPTURE_WIDTH,
+        height: CAPTURE_HEIGHT,
+        timestamp: Date.now(),
+      }),
+    );
   }
 }

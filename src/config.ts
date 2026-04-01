@@ -24,7 +24,7 @@ const ConfigSchema = z.object({
   calibrationFilePath: z
     .string()
     .default(path.join(DEFAULT_CONFIG_DIR, 'calibration.json')),
-  targetFps: z.number().int().min(5).max(60).default(30),
+  targetFps: z.number().int().min(1).max(30).default(5),
   verticalSwitching: z.boolean().default(false),
 });
 
@@ -107,9 +107,8 @@ export const SENSITIVITY_PRESETS: Record<SensitivityLevel, PartialConfig> = Obje
 /** Version of the calibration file format. */
 export const CALIBRATION_FORMAT_VERSION = 2;
 
-/** Number of seconds to sample gaze per monitor during calibration.
- *  Increased to 8s to accommodate imagesnap's ~1fps effective capture rate on macOS. */
-export const CALIBRATION_DURATION_S = 8;
+/** Number of seconds to sample gaze per monitor during calibration. */
+export const CALIBRATION_DURATION_S = 5;
 
 /** Landmark index for nose tip in MediaPipe 468-point model. */
 export const NOSE_TIP_INDEX = 1;
